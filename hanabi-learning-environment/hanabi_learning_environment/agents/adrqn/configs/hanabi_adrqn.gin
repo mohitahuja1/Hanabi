@@ -3,21 +3,21 @@ import run_experiment
 
 # This configures the ADRQN Agent.
 AGENT_CLASS = @AdrqnAgent
-AdrqnAgent.gamma = 0.999
-AdrqnAgent.learning_rate = 0.005
-AdrqnAgent.explore = 300
-AdrqnAgent.replay_buffer_size=100000
-AdrqnAgent.sample_length=20
+AdrqnAgent.gamma = 0.997
+AdrqnAgent.learning_rate = 0.001
+AdrqnAgent.explore = 500
+AdrqnAgent.replay_buffer_size=500000
+AdrqnAgent.sample_length=40
 AdrqnAgent.batch_size = 64
 AdrqnAgent.eps_start = 0.9
-AdrqnAgent.eps_end = 0.05
+AdrqnAgent.eps_end = 0.01
 AdrqnAgent.eps_decay = 10
 AdrqnAgent.tf_device = '/gpu:0'  # '/cpu:*' use for non-GPU version
 
 run_experiment.training_steps = 1000 # originally 10000
 run_experiment.num_iterations = 1000 # originally 10005
-run_experiment.checkpoint_every_n = 50 # originally 50
-run_one_iteration.evaluate_every_n = 1 # originally 10
+run_experiment.checkpoint_every_n = 100 # originally 50
+run_one_iteration.evaluate_every_n = 5 # originally 10
 # run_one_iteration.num_evaluation_games = 2 # debug
 
 # Small Hanabi.
