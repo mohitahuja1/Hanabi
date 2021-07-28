@@ -7,23 +7,25 @@ AdrqnAgent.gamma = 0.995
 AdrqnAgent.learning_rate = 0.005
 AdrqnAgent.explore = 500
 AdrqnAgent.replay_buffer_size=500000
-AdrqnAgent.sample_length=20
+AdrqnAgent.sample_length=40
 AdrqnAgent.batch_size = 64
-AdrqnAgent.eps_start = 0.9
-AdrqnAgent.eps_end = 0.01
-AdrqnAgent.eps_decay = 10
+AdrqnAgent.epsilon_train = 0.02
+AdrqnAgent.epsilon_eval = 0.001
+AdrqnAgent.epsilon_decay_period = 1000
+AdrqnAgent.update_period = 4
+AdrqnAgent.target_update_period = 500
 AdrqnAgent.tf_device = '/gpu:0'  # '/cpu:*' use for non-GPU version
 
 # ADRQN class
-ADRQN.hidden_size = 128
-ADRQN.out_size = 128
+ADRQN.hidden_size = 256
+ADRQN.out_size = 256
 
 # run_experiment.py
-run_experiment.training_steps = 500 # originally 10000
-run_experiment.num_iterations = 500 # originally 10005
-run_experiment.checkpoint_every_n = 100 # originally 50
-run_one_iteration.evaluate_every_n = 5 # originally 10
-# run_one_iteration.num_evaluation_games = 2 # debug
+run_experiment.training_steps = 1000 # DQN: 10000
+run_experiment.num_iterations = 1000 # DQN: 10005
+run_experiment.checkpoint_every_n = 100 # DQN: 50
+run_one_iteration.evaluate_every_n = 5 # DQN: 10
+run_one_iteration.num_evaluation_games = 20 # debug
 
 # Small Hanabi.
 create_environment.game_type = 'Hanabi-Small'

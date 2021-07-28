@@ -297,6 +297,7 @@ def run_one_episode(agent, environment, obs_stacker, belief_level):
   is_done = False
   total_reward = 0
   step_number = 0
+  total_loss = 0
 
   has_played = {current_player}
 
@@ -319,8 +320,9 @@ def run_one_episode(agent, environment, obs_stacker, belief_level):
     current_player, legal_moves, observation_vector = (
         parse_observations(observations, environment.num_moves(), obs_stacker, belief_level))
     if current_player in has_played:
-      action = agent.step(reward_since_last_action[current_player],
+      action, loss = agent.step(reward_since_last_action[current_player],
                           current_player, legal_moves, observation_vector)
+      total_loss += loss
     else:
       # Each player begins the episode on their first turn (which may not be
       # the first move of the game).
@@ -334,7 +336,7 @@ def run_one_episode(agent, environment, obs_stacker, belief_level):
   agent.end_episode(reward_since_last_action, current_player)
 
   # tf.logging.info('EPISODE: %d %g', step_number, total_reward)
-  return step_number, total_reward
+  return step_number, total_reward, total_loss
 
 
 def run_one_phase(agent, environment, obs_stacker, min_steps, statistics,
@@ -357,9 +359,10 @@ def run_one_phase(agent, environment, obs_stacker, min_steps, statistics,
   step_count = 0
   num_episodes = 0
   sum_returns = 0.
+  sum_loss = 0.
 
   while step_count < min_steps:
-    episode_length, episode_return = run_one_episode(agent, environment,
+    episode_length, episode_return, episode_loss = run_one_episode(agent, environment,
                                                      obs_stacker, belief_level)
     statistics.append({
         '{}_episode_lengths'.format(run_mode_str): episode_length,
@@ -369,10 +372,11 @@ def run_one_phase(agent, environment, obs_stacker, min_steps, statistics,
     step_count += episode_length
     sum_returns += episode_return
     num_episodes += 1
+    sum_loss += episode_loss
     
     print("step_count: ", step_count)
 
-  return step_count, sum_returns, num_episodes
+  return step_count, sum_returns, num_episodes, sum_loss
 
 
 @gin.configurable
@@ -404,7 +408,7 @@ def run_one_iteration(agent, environment, obs_stacker,
 
   # First perform the training phase, during which the agent learns.
   agent.eval_mode = False
-  number_steps, sum_returns, num_episodes = (
+  number_steps, sum_returns, num_episodes, sum_loss = (
       run_one_phase(agent, environment, obs_stacker, training_steps, statistics,
                     'train', belief_level))
   time_delta = time.time() - start_time
@@ -412,8 +416,11 @@ def run_one_iteration(agent, environment, obs_stacker,
   #                 number_steps / time_delta)
 
   average_return = sum_returns / num_episodes
+  average_loss = sum_loss / num_episodes
   # tf.logging.info('Average per episode return: %.2f', average_return)
   statistics.append({'average_return': average_return})
+  statistics.append({'average_loss': average_loss})
+  tf.logging.info('Average per episode loss: %.2f', average_loss)
 
   # Also run an evaluation phase if desired.
   if evaluate_every_n is not None and iteration % evaluate_every_n == 0:
@@ -422,14 +429,15 @@ def run_one_iteration(agent, environment, obs_stacker,
     # Collect episode data for all games.
     for _ in range(num_evaluation_games):
       episode_data.append(run_one_episode(agent, environment, obs_stacker, belief_level))
-    eval_episode_length, eval_episode_return = map(np.mean, zip(*episode_data))
+    eval_episode_length, eval_episode_return, eval_episode_loss = map(np.mean, zip(*episode_data))
 
     statistics.append({
         'eval_episode_lengths': eval_episode_length,
-        'eval_episode_returns': eval_episode_return
+        'eval_episode_returns': eval_episode_return,
+        'eval_episode_losses': eval_episode_loss
     })
-    tf.logging.info('Average eval. episode length: %.2f  Return: %.2f',
-                    eval_episode_length, eval_episode_return)
+    tf.logging.info('Average eval. episode length: %.2f  Return: %.2f Loss: %.2f',
+                    eval_episode_length, eval_episode_return, eval_episode_loss)
   else:
     statistics.append({
         'eval_episode_lengths': -1,

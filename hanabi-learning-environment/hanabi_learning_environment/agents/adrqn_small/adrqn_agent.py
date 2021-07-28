@@ -1,4 +1,3 @@
-
 import random
 import numpy as np
 import gin.tf
@@ -11,6 +10,23 @@ import copy
 import time
 from itertools import count
 import math
+
+def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
+  """Returns the current epsilon parameter for the agent's e-greedy policy.
+
+  Args:
+    decay_period: float, the decay period for epsilon.
+    step: Integer, the number of training steps completed so far.
+    warmup_steps: int, the number of steps taken before training starts.
+    epsilon: float, the epsilon value.
+
+  Returns:
+    A float, the linearly decaying epsilon value.
+  """
+  steps_left = decay_period + warmup_steps - step
+  bonus = (1.0 - epsilon) * steps_left / decay_period
+  bonus = np.clip(bonus, 0.0, 1.0 - epsilon)
+  return epsilon + bonus
 
 @gin.configurable
 class ADRQN(nn.Module):
@@ -141,9 +157,9 @@ class AdrqnAgent(Agent):
                replay_buffer_size=100000,
                sample_length=20,
                batch_size = 64,
-               eps_start = 0.9,
-               eps_end = 0.05,
-               eps_decay = 10,
+               epsilon_train = 0.02,
+               epsilon_eval = 0.001,
+               epsilon_decay_period = 1000,
                gamma = 0.999,
                learning_rate = 0.01,
                explore = 300,
@@ -155,6 +171,8 @@ class AdrqnAgent(Agent):
                training_steps = 0, # debug
                update_period = 4, # debug
                target_update_period = 500, # debug
+               loss = 0, # debug
+               epsilon_fn=linearly_decaying_epsilon,
                tf_device='/cpu:*',):
 
     # Global variables.
@@ -164,10 +182,9 @@ class AdrqnAgent(Agent):
     self.replay_buffer_size = replay_buffer_size
     self.sample_length = sample_length
     self.batch_size = batch_size
-    self.eps_start = eps_start
-    self.eps = eps_start
-    self.eps_end = eps_end
-    self.eps_decay = eps_decay
+    self.epsilon_train = epsilon_train
+    self.epsilon_eval = epsilon_eval
+    self.epsilon_decay_period = epsilon_decay_period
     self.gamma = gamma
     self.learning_rate = learning_rate
     self.explore = explore
@@ -180,6 +197,9 @@ class AdrqnAgent(Agent):
     self.training_steps = training_steps # debug
     self.update_period = update_period # debug
     self.target_update_period = target_update_period # debug
+    self.loss = loss
+    self.epsilon_fn = epsilon_fn
+    self.eval_mode = False
 
     # ADRQN and ExpBuffer instances
     self.replay_buffer = ExpBuffer(self.replay_buffer_size, self.sample_length)
@@ -201,12 +221,18 @@ class AdrqnAgent(Agent):
 
     # print("one_hot: ", F.one_hot(torch.tensor(self.last_action[current_player]), self.num_actions).view(1,1,-1).float())
 
+    if self.eval_mode:
+      epsilon = self.epsilon_eval
+    else:
+      epsilon = self.epsilon_fn(self.epsilon_decay_period, self.training_steps,
+                                self.explore, self.epsilon_train)
+
     action, self.hidden = self.adrqn.act(
       torch.tensor(observation).float().view(1,1,-1).cuda(),
       F.one_hot(torch.tensor(self.last_action[current_player]), self.num_actions).view(1,1,-1).float().cuda(),
       legal_actions,
       hidden = self.hidden,
-      epsilon = self.eps)
+      epsilon = epsilon)
 
     # print("action: ", action)
     self.last_action[current_player] = action
@@ -233,14 +259,20 @@ class AdrqnAgent(Agent):
       self.begin = 0
       if self.i_episode > self.explore:
         # print("here 1")
-        self._update_network()
+        self.loss = self._update_network()
+
+    if self.eval_mode:
+      epsilon = self.epsilon_eval
+    else:
+      epsilon = self.epsilon_fn(self.epsilon_decay_period, self.training_steps,
+                                self.explore, self.epsilon_train)
 
     action, self.hidden = self.adrqn.act(
       torch.tensor(observation).float().view(1,1,-1).cuda(),
       F.one_hot(torch.tensor(self.last_action[current_player]), self.num_actions).view(1,1,-1).float().cuda(),
       legal_actions,
       hidden = self.hidden,
-      epsilon = self.eps)
+      epsilon = epsilon)
 
     if self.begin == 0:
       self.replay_buffer.write_tuple((
@@ -253,12 +285,12 @@ class AdrqnAgent(Agent):
         ))
       if self.i_episode > self.explore:
         # print("here 2")
-        self._update_network()
+        self.loss = self._update_network()
 
       self.last_action[current_player] = action
       self.last_observation[current_player] = observation
 
-    return action
+    return action, self.loss
 
   def end_episode(self, final_rewards, player):
 
@@ -283,39 +315,17 @@ class AdrqnAgent(Agent):
 
   def _update_network(self):
 
+    if self.eval_mode:
+      return 0
+
     if self.training_steps % self.update_period == 0:
 
-      self.eps = self.eps_end + (self.eps_start - self.eps_end) * math.exp((-1*(self.i_episode-self.explore))/self.eps_decay)
+      epsilon = self.epsilon_fn(self.epsilon_decay_period, self.training_steps,
+                                 self.explore, self.epsilon_train)
 
       last_actions, last_observations, actions, rewards, observations, dones = self.replay_buffer.sample(self.batch_size)
       q_values, _ = self.adrqn.forward(last_observations, F.one_hot(last_actions, self.num_actions).float())
-      # print("q_values: ", q_values)
-      # print("q_values shape: ", q_values.shape)
-      # print("last_observations shape: ", last_observations.shape)
-      # print("last_actions: ", last_actions)
-      # print("last_actions shape: ", last_actions.shape)
-      # print("actions shape: ", actions.shape)
-      # print("actions unsqueezed shape: ", actions.unsqueeze(-1).shape)
-      # print("q_values data type: ", q_values.dtype)
-      # print("q_values tensor type: ", q_values.type)
-      # q_values = q_values.type(torch.LongTensor)
-      # actions = actions.type(torch.LongTensor)
-      # print("q_values data type 2: ", q_values.dtype)
-      # print("q_values tensor type 2: ", q_values.type)
-      # print("q_values data type: ", q_values.dtype)fl
-      # q_values = q_values.long()
-      # print("q_values data type: ", q_values.dtype)
-      # print("torch version: ", torch.__version__) 
-      # print("actions: ", actions)
-      # print("actions shape: ", actions.shape)
-      # print("actions[0]: ", actions[0])
-      # print("actions[1]: ", actions[1])
-      # print("actions[2]: ", actions[2])
-      # mx = 0
-      # for e in actions:
-      #     if max(e) > mx:
-      #         mx = max(e)
-      # print("max: ", mx)
+
       q_values = torch.gather(q_values, -1, actions.unsqueeze(-1)).squeeze(-1)
       # q_values = torch.gather(q_values.type(torch.LongTensor), -1, actions.type(torch.LongTensor).unsqueeze(-1)).squeeze(-1).type(torch.LongTensor)
       # print("here")
@@ -328,18 +338,12 @@ class AdrqnAgent(Agent):
       loss.backward()
       self.optimizer.step()
 
+      self.loss = loss
+
     if self.training_steps % self.target_update_period == 0:
       self.adrqn_target.load_state_dict(self.adrqn.state_dict())
-      print("eps: ", self.eps)
+      print("eps: ", epsilon)
 
     self.training_steps += 1
 
-  # Convert index to one hot action
-  def _idx_to_one_hot(self, idx):
-    one_hot_action = []
-    for i in range(20):
-      if i == idx:
-        one_hot_action.append(1)
-      else:
-        one_hot_action.append(0)
-    return one_hot_action
+    return self.loss
