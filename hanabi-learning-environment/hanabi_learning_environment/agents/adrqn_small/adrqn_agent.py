@@ -10,6 +10,7 @@ import copy
 import time
 from itertools import count
 import math
+import csv
 
 def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
   """Returns the current epsilon parameter for the agent's e-greedy policy.
@@ -200,6 +201,12 @@ class AdrqnAgent(Agent):
     self.loss = loss
     self.epsilon_fn = epsilon_fn
     self.eval_mode = False
+    self.raw_data = [["training_step", "reward", "done", "q_value", "target_value", "loss", "lstm_weight_ih_l0",
+    "lstm_weight_hh_l0", "lstm_bias_ih_l0", "lstm_bias_hh_l0", "out_layer_weight", "out_layer_bias"]]
+
+    print("num_actions: ", num_actions)
+    print("observation_size: ", observation_size)
+    print("num_players: ", num_players)
 
     # ADRQN and ExpBuffer instances
     self.replay_buffer = ExpBuffer(self.replay_buffer_size, self.sample_length)
@@ -340,7 +347,30 @@ class AdrqnAgent(Agent):
 
       self.loss = loss
 
+      weight_ih_l0, weight_hh_l0, bias_ih_l0, bias_hh_l0, weight, bias = None, None, None, None, None, None
+      for name, param in self.adrqn.named_parameters():
+        if name == "lstm.weight_ih_l0":
+          weight_ih_l0 = param.grad.norm().item()
+        if name == "lstm.weight_hh_l0":
+          weight_hh_l0 = param.grad.norm().item()
+        if name == "lstm.bias_ih_l0":
+          bias_ih_l0 = param.grad.norm().item()
+        if name == "lstm.bias_hh_l0":
+          bias_hh_l0 = param.grad.norm().item()
+        if name == "out_layer.weight":
+          weight = param.grad.norm().item()
+        if name == "out_layer.bias":
+          bias = param.grad.norm().item()
+
     if self.training_steps % self.target_update_period == 0:
+
+      lst = [self.training_steps, rewards[0][0].item(), dones[0][0].item(), q_values[0][0].item(), target_values[0][0].item(),
+          loss.item(), weight_ih_l0, weight_hh_l0, bias_ih_l0, bias_hh_l0, weight, bias]
+      self.raw_data.append(lst)
+      with open("out.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(self.raw_data)
+
       self.adrqn_target.load_state_dict(self.adrqn.state_dict())
       print("eps: ", epsilon)
 
