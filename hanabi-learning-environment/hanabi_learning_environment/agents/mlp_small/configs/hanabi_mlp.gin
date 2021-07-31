@@ -1,0 +1,35 @@
+import mlp_agent
+import run_experiment
+
+# MLP Agent
+AGENT_CLASS = @MLPAgent
+# MLPAgent.embedding_size = 8
+MLPAgent.gamma = 0.99
+MLPAgent.learning_rate = 0.001
+MLPAgent.explore = 500
+MLPAgent.replay_buffer_size=50000
+# MLPAgent.sample_length=20
+# MLPAgent.batch_size = 32
+MLPAgent.epsilon_train = 0.02
+MLPAgent.epsilon_eval = 0.001
+MLPAgent.epsilon_decay_period = 1000
+MLPAgent.update_period = 1
+MLPAgent.target_update_period = 500
+MLPAgent.tf_device = '/gpu:0'  # '/cpu:*' use for non-GPU version
+
+# MLP class
+MLP.out_size = 512
+
+# run_experiment.py
+run_experiment.training_steps = 1000 # DQN: 10000
+run_experiment.num_iterations = 5000 # DQN: 10005
+run_experiment.checkpoint_every_n = 100 # DQN: 50
+run_one_iteration.evaluate_every_n = 5 # DQN: 10
+run_one_iteration.num_evaluation_games = 100 # debug
+
+# Small Hanabi.
+create_environment.game_type = 'Hanabi-Small'
+create_environment.num_players = 2
+
+create_agent.agent_type = 'MLP'
+create_obs_stacker.history_size = 1

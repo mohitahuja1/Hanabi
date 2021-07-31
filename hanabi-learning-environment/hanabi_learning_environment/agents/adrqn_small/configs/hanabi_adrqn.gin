@@ -3,6 +3,7 @@ import run_experiment
 
 # ADRQN Agent
 AGENT_CLASS = @AdrqnAgent
+AdrqnAgent.embedding_size = 8
 AdrqnAgent.gamma = 0.995
 AdrqnAgent.learning_rate = 0.0001
 AdrqnAgent.explore = 500
@@ -19,13 +20,15 @@ AdrqnAgent.tf_device = '/gpu:0'  # '/cpu:*' use for non-GPU version
 # ADRQN class
 ADRQN.hidden_size = 256
 ADRQN.out_size = 256
+ADRQN.obs_layer1_size = 16
+ADRQN.obs_layer2_size = 32
 
 # run_experiment.py
 run_experiment.training_steps = 1000 # DQN: 10000
 run_experiment.num_iterations = 5000 # DQN: 10005
 run_experiment.checkpoint_every_n = 100 # DQN: 50
 run_one_iteration.evaluate_every_n = 5 # DQN: 10
-run_one_iteration.num_evaluation_games = 20 # debug
+run_one_iteration.num_evaluation_games = 100 # debug
 
 # Small Hanabi.
 create_environment.game_type = 'Hanabi-Small'

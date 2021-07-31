@@ -31,40 +31,38 @@ def linearly_decaying_epsilon(decay_period, step, warmup_steps, epsilon):
   return epsilon + bonus
 
 @gin.configurable
-class ADRQN(nn.Module):
-    def __init__(self, n_actions, observation_size, embedding_size, hidden_size=512,
-                 out_size=512, obs_layer1_size = 16, obs_layer2_size = 32):
-        super(ADRQN, self).__init__()
+class MLP(nn.Module):
+    def __init__(self, n_actions, observation_size, out_size=512):
+        super(MLP, self).__init__()
         self.n_actions = n_actions
-        self.hidden_size = hidden_size
+        self.observation_size = observation_size
         self.out_size = out_size
-        self.embedding_size = embedding_size
-        self.obs_layer1_size = obs_layer1_size
-        self.obs_layer2_size = obs_layer2_size
-        self.embedder = nn.Linear(self.n_actions, embedding_size)
-        self.obs_layer = nn.Linear(observation_size, self.obs_layer1_size)
-        self.obs_layer2 = nn.Linear(self.obs_layer1_size, self.obs_layer2_size)
-        self.lstm = nn.LSTM(input_size = self.obs_layer2_size + self.embedding_size,
-                            hidden_size = self.hidden_size, batch_first = True)
-        self.out_layer = nn.Linear(self.out_size, self.n_actions)
+        # self.embedding_size = embedding_size
+        # self.obs_layer1_size = obs_layer1_size
+        # self.obs_layer2_size = obs_layer2_size
+        # self.embedder = nn.Linear(self.n_actions, embedding_size)
+        # self.obs_layer = nn.Linear(observation_size, self.obs_layer1_size)
+        # self.obs_layer2 = nn.Linear(self.obs_layer1_size, self.obs_layer2_size)
+        # self.lstm = nn.LSTM(input_size = self.obs_layer2_size + self.embedding_size,
+        #                     hidden_size = self.hidden_size, batch_first = True)
+        self.out_layer = nn.Linear(self.observation_size, self.n_actions)
     
-    def forward(self, observation, action, hidden = None):
+    def forward(self, observation):
         #Takes observations with shape (batch_size, seq_len, obs_dim)
         #Takes one_hot actions with shape (batch_size, seq_len, n_actions)
-        action_embedded = self.embedder(action)
-        observation = F.relu(self.obs_layer(observation))
-        observation = F.relu(self.obs_layer2(observation))
-        lstm_input = torch.cat([observation, action_embedded], dim = -1)
-        if hidden is not None:
-            lstm_out, hidden_out = self.lstm(lstm_input, hidden)
-        else:
-            lstm_out, hidden_out = self.lstm(lstm_input)
-
-        q_values = self.out_layer(lstm_out)
-        return q_values, hidden_out
+        # action_embedded = self.embedder(action)
+        # observation = F.relu(self.obs_layer(observation))
+        # observation = F.relu(self.obs_layer2(observation))
+        # lstm_input = torch.cat([observation, action_embedded], dim = -1)
+        # if hidden is not None:
+        #     lstm_out, hidden_out = self.lstm(lstm_input, hidden)
+        # else:
+        #     lstm_out, hidden_out = self.lstm(lstm_input)
+        q_values = self.out_layer(observation)
+        return q_values
     
-    def act(self, observation, last_action, legal_actions, epsilon, hidden = None):
-        q_values_tensor, hidden_out = self.forward(observation, last_action, hidden)
+    def act(self, observation, legal_actions, epsilon):
+        q_values_tensor = self.forward(observation)
         q_values_np = q_values_tensor[0][0].cpu().detach().numpy()
         q_values = []
         legal_action_indices = np.where(legal_actions == 0.0)[0]
@@ -80,7 +78,7 @@ class ADRQN(nn.Module):
         else:
         #   print("random")
           action = np.random.choice(legal_action_indices)
-        return action, hidden_out
+        return action
 
 @gin.configurable
 class ExpBuffer():
@@ -147,7 +145,7 @@ class ExpBuffer():
                torch.tensor(dones).cuda()
 
 @gin.configurable
-class AdrqnAgent(Agent):
+class MLPAgent(Agent):
 
   @gin.configurable
   def __init__(self,
@@ -164,7 +162,6 @@ class AdrqnAgent(Agent):
                gamma = 0.999,
                learning_rate = 0.01,
                explore = 300,
-               hidden = None, # debug
                last_action = {}, # debug
                last_observation = {}, # debug
                begin = 1, # debug
@@ -191,7 +188,6 @@ class AdrqnAgent(Agent):
     self.learning_rate = learning_rate
     self.explore = explore
 
-    self.hidden = hidden # debug
     self.last_action = last_action # debug
     self.last_observation = last_observation # debug
     self.begin = begin # debug
@@ -204,22 +200,21 @@ class AdrqnAgent(Agent):
     self.eval_mode = False
     self.q_values_list = []
     self.target_values_list = []
-    self.raw_data = [["training_step", "example_reward", "example_done", "avg_q_value", "avg_target_value",
-                      "loss", "lstm_weight_ih_l0_NORM", "lstm_weight_hh_l0_NORM", "lstm_bias_ih_l0_NORM",
-                      "lstm_bias_hh_l0_NORM", "out_layer_weight_NORM", "out_layer_bias_NORM"]]
+    self.raw_data = [["training_step", "example_reward", "example_done", "avg_q_value", "avg_target_value", 
+                      "loss", "out_layer_weight_NORM", "out_layer_bias_NORM"]]
 
     print("num_actions: ", num_actions)
     print("observation_size: ", observation_size)
     print("num_players: ", num_players)
 
-    # ADRQN and ExpBuffer instances
+    # MLP and ExpBuffer instances
     self.replay_buffer = ExpBuffer(self.replay_buffer_size, self.sample_length)
-    self.adrqn = ADRQN(self.num_actions, self.observation_size, self.embedding_size).cuda()
-    self.adrqn_target = ADRQN(self.num_actions, self.observation_size, self.embedding_size).cuda()
-    self.adrqn_target.load_state_dict(self.adrqn.state_dict())
+    self.mlp = MLP(self.num_actions, self.observation_size).cuda()
+    self.mlp_target = MLP(self.num_actions, self.observation_size).cuda()
+    self.mlp_target.load_state_dict(self.mlp.state_dict())
 
     # Optimizer
-    self.optimizer = torch.optim.Adam(self.adrqn.parameters(), lr = learning_rate)
+    self.optimizer = torch.optim.Adam(self.mlp.parameters(), lr = learning_rate)
 
   def begin_episode(self, current_player, legal_actions, observation):
 
@@ -238,11 +233,9 @@ class AdrqnAgent(Agent):
       epsilon = self.epsilon_fn(self.epsilon_decay_period, self.training_steps,
                                 self.explore, self.epsilon_train)
 
-    action, self.hidden = self.adrqn.act(
+    action = self.mlp.act(
       torch.tensor(observation).float().view(1,1,-1).cuda(),
-      F.one_hot(torch.tensor(self.last_action[current_player]), self.num_actions).view(1,1,-1).float().cuda(),
       legal_actions,
-      hidden = self.hidden,
       epsilon = epsilon)
 
     # print("action: ", action)
@@ -278,11 +271,9 @@ class AdrqnAgent(Agent):
       epsilon = self.epsilon_fn(self.epsilon_decay_period, self.training_steps,
                                 self.explore, self.epsilon_train)
 
-    action, self.hidden = self.adrqn.act(
+    action = self.mlp.act(
       torch.tensor(observation).float().view(1,1,-1).cuda(),
-      F.one_hot(torch.tensor(self.last_action[current_player]), self.num_actions).view(1,1,-1).float().cuda(),
       legal_actions,
-      hidden = self.hidden,
       epsilon = epsilon)
 
     if self.begin == 0:
@@ -335,12 +326,12 @@ class AdrqnAgent(Agent):
                                  self.explore, self.epsilon_train)
 
       last_actions, last_observations, actions, rewards, observations, dones = self.replay_buffer.sample(self.batch_size)
-      q_values, _ = self.adrqn.forward(last_observations, F.one_hot(last_actions, self.num_actions).float())
+      q_values = self.mlp.forward(last_observations).float()
 
       q_values = torch.gather(q_values, -1, actions.unsqueeze(-1)).squeeze(-1)
       # q_values = torch.gather(q_values.type(torch.LongTensor), -1, actions.type(torch.LongTensor).unsqueeze(-1)).squeeze(-1).type(torch.LongTensor)
       # print("here")
-      predicted_q_values, _ = self.adrqn_target.forward(observations, F.one_hot(actions, self.num_actions).float())
+      predicted_q_values = self.mlp.forward(observations).float()
       target_values = rewards + (self.gamma * (1 - dones.float()) * torch.max(predicted_q_values, dim = -1)[0])
 
       #Update network parameters
@@ -351,16 +342,8 @@ class AdrqnAgent(Agent):
 
       self.loss = loss
 
-      weight_ih_l0, weight_hh_l0, bias_ih_l0, bias_hh_l0, weight, bias = None, None, None, None, None, None
-      for name, param in self.adrqn.named_parameters():
-        if name == "lstm.weight_ih_l0":
-          weight_ih_l0 = param.grad.norm().item()
-        if name == "lstm.weight_hh_l0":
-          weight_hh_l0 = param.grad.norm().item()
-        if name == "lstm.bias_ih_l0":
-          bias_ih_l0 = param.grad.norm().item()
-        if name == "lstm.bias_hh_l0":
-          bias_hh_l0 = param.grad.norm().item()
+      weight, bias = None, None
+      for name, param in self.mlp.named_parameters():
         if name == "out_layer.weight":
           weight = param.grad.norm().item()
         if name == "out_layer.bias":
@@ -373,15 +356,15 @@ class AdrqnAgent(Agent):
       self.target_values_list.append(target_values)
       pickle.dump(self.target_values_list, open('target_values_list.pkl', 'wb' ))
 
-      lst = [self.training_steps, rewards[0][0].item(), dones[0][0].item(),
+      lst = [self.training_steps, rewards[0][0].item(), dones[0][0].item(), 
              torch.mean(torch.mean(q_values, 1), 0).item(),torch.mean(torch.mean(target_values, 1), 0).item(),
-             loss.item(), weight_ih_l0, weight_hh_l0, bias_ih_l0, bias_hh_l0, weight, bias]
+             loss.item(), weight, bias]
       self.raw_data.append(lst)
-      with open("out_run5.csv", "w", newline="") as f:
+      with open("out.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(self.raw_data)
 
-      self.adrqn_target.load_state_dict(self.adrqn.state_dict())
+      self.mlp.load_state_dict(self.mlp.state_dict())
       print("eps: ", epsilon)
 
     self.training_steps += 1
