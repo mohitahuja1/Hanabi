@@ -45,7 +45,13 @@ class MLP(nn.Module):
         # self.obs_layer2 = nn.Linear(self.obs_layer1_size, self.obs_layer2_size)
         # self.lstm = nn.LSTM(input_size = self.obs_layer2_size + self.embedding_size,
         #                     hidden_size = self.hidden_size, batch_first = True)
-        self.out_layer = nn.Linear(self.observation_size, self.n_actions)
+        self.fc1 = nn.Linear(self.observation_size, out_size)
+        self.fc2 = nn.Linear(out_size, self.n_actions)
+        # self.out_layer = nn.Sequential(
+        #   nn.Linear(self.observation_size, self.out_size),
+        #   nn.ReLU(),
+        #   nn.Linear(self.out_size, self.n_actions)
+        # )
     
     def forward(self, observation):
         #Takes observations with shape (batch_size, seq_len, obs_dim)
@@ -58,7 +64,10 @@ class MLP(nn.Module):
         #     lstm_out, hidden_out = self.lstm(lstm_input, hidden)
         # else:
         #     lstm_out, hidden_out = self.lstm(lstm_input)
-        q_values = self.out_layer(observation)
+        # q_values = self.out_layer(observation)
+        x = self.fc1(observation)
+        x = F.relu(x)
+        q_values = self.fc2(x)
         return q_values
     
     def act(self, observation, legal_actions, epsilon):
@@ -201,7 +210,7 @@ class MLPAgent(Agent):
     self.q_values_list = []
     self.target_values_list = []
     self.raw_data = [["training_step", "example_reward", "example_done", "avg_q_value", "avg_target_value", 
-                      "loss", "out_layer_weight_NORM", "out_layer_bias_NORM"]]
+                      "loss", "fc1_weight_NORM", "fc1_bias_NORM", "fc2_weight_NORM", "fc2_bias_NORM"]]
 
     print("num_actions: ", num_actions)
     print("observation_size: ", observation_size)
@@ -342,12 +351,16 @@ class MLPAgent(Agent):
 
       self.loss = loss
 
-      weight, bias = None, None
+      fc1_weight, fc1_bias, fc2_weight, fc2_bias = None, None, None, None
       for name, param in self.mlp.named_parameters():
-        if name == "out_layer.weight":
-          weight = param.grad.norm().item()
-        if name == "out_layer.bias":
-          bias = param.grad.norm().item()
+        if name == "fc1.weight":
+          fc1_weight = param.grad.norm().item()
+        if name == "fc1.bias":
+          fc1_bias = param.grad.norm().item()
+        if name == "fc2.weight":
+          fc2_weight = param.grad.norm().item()
+        if name == "fc2.bias":
+          fc2_bias = param.grad.norm().item()
 
     if self.training_steps % self.target_update_period == 0:
 
@@ -358,7 +371,7 @@ class MLPAgent(Agent):
 
       lst = [self.training_steps, rewards[0][0].item(), dones[0][0].item(), 
              torch.mean(torch.mean(q_values, 1), 0).item(),torch.mean(torch.mean(target_values, 1), 0).item(),
-             loss.item(), weight, bias]
+             loss.item(), fc1_weight, fc1_bias, fc2_weight, fc2_bias]
       self.raw_data.append(lst)
       with open("out.csv", "w", newline="") as f:
         writer = csv.writer(f)
