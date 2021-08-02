@@ -262,9 +262,6 @@ def parse_observations(observations, num_actions, obs_stacker, belief_level):
   current_player_observation = (
       observations['player_observations'][current_player])
 
-  # print("observations: ", observations) # debug
-  # print("current_player_observation: ", current_player_observation) # debug
-
   legal_moves = current_player_observation['legal_moves_as_int']
   legal_moves = format_legal_moves(legal_moves, num_actions)
 
@@ -272,8 +269,6 @@ def parse_observations(observations, num_actions, obs_stacker, belief_level):
     observation_vector = current_player_observation['vectorized']
   elif belief_level == 0:
     hand_probas = get_hand_probas(current_player_observation)
-    # print("hand_probas: ", hand_probas)
-    # print("observation_vector: ", current_player_observation['vectorized'])
     observation_vector = np.append(current_player_observation['vectorized'], hand_probas)
   obs_stacker.add_observation(observation_vector, current_player)
   observation_vector = obs_stacker.get_observation_stack(current_player)
@@ -311,8 +306,6 @@ def run_one_episode(agent, environment, obs_stacker, belief_level):
 
   while not is_done:
     observations, reward, is_done, _ = environment.step(int(action))
-
-    # print("reward: ", reward)
 
     modified_reward = max(reward, 0) if LENIENT_SCORE else reward
     total_reward += modified_reward
@@ -448,8 +441,6 @@ def run_one_iteration(agent, environment, obs_stacker,
         'eval_episode_lengths': -1,
         'eval_episode_returns': -1
     })
-
-  # print(statistics.data_lists) # debug
 
   return statistics.data_lists
 
